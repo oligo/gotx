@@ -41,14 +41,18 @@ type Transaction struct {
 	// reference to tx manager
 	txManager *TxManager
 	// ctx       context.Context
+
+	// requiredNew marks if this transaction is created from a new db tx or not
+	requiredNew bool
 }
 
-func NewTx(t *rawTx, txID string, manager *TxManager) *Transaction {
+func NewTx(t *rawTx, txID string, requiredNew bool, manager *TxManager) *Transaction {
 	trans := &Transaction{
-		tx:        t,
-		txID:      txID,
-		txManager: manager,
-		committed: false,
+		tx:          t,
+		txID:        txID,
+		txManager:   manager,
+		requiredNew: requiredNew,
+		committed:   false,
 	}
 
 	atomic.AddUint32(&trans.tx.refCount, 1)
@@ -72,36 +76,47 @@ func (t *Transaction) checkState() error {
 	return nil
 }
 
-func (t *Transaction) commit() error {
+func (t *Transaction) Commit() error {
 	t.txManager.Remove(t)
+	var err error
 
-	// decrease refCount by one
-	leftRefs := atomic.AddUint32(&t.tx.refCount, ^uint32(0))
-	// If refCount decreases to zero, do the real commit
-	if leftRefs <= 0 {
-		err := t.tx.Commit()
-		if err != nil {
-			return err
+	if t.requiredNew {
+		err = t.tx.Commit()
+	} else {
+		// decrease refCount by one
+		leftRefs := atomic.AddUint32(&t.tx.refCount, ^uint32(0))
+		// If refCount decreases to zero, do the real commit
+		if leftRefs <= 0 {
+			err = t.tx.Commit()
 		}
-
 	}
 
+	t.committed = true
 	log.Printf("%s committed\n", t)
-	return nil
+	return err
 }
 
-// rollback always do the real rollback
-func (t *Transaction) rollback() error {
-	t.txManager.RemoveAll()
-	if atomic.LoadUint32(&t.tx.refCount) > 0 {
-		atomic.SwapUint32(&t.tx.refCount, 0)
-		err := t.tx.Rollback()
-		if err != nil {
-			return err
+// rollback always do the real rollback. For tx binding to a unique db tx(requiredNew is true),
+// rollback do the db rollback directly. For tx sharing a db tx, rollback do rollback only once.
+func (t *Transaction) Rollback() error {
+	var err error
+	if t.requiredNew {
+		t.txManager.Remove(t)
+		atomic.AddUint32(&t.tx.refCount, ^uint32(0))
+		err = t.tx.Rollback()
+	} else {
+		t.txManager.RemoveAll()
+		if atomic.LoadUint32(&t.tx.refCount) > 0 {
+			atomic.SwapUint32(&t.tx.refCount, 0)
+			err = t.tx.Rollback()
 		}
-		log.Printf("%s rolledback\n", t)
 	}
 
+	if err != nil {
+		return err
+	}
+
+	log.Printf("%s rolledback\n", t)
 	return nil
 }
 

@@ -63,7 +63,7 @@ func (tm *TxManager) Exec(ctx context.Context, txFunc func(tx *Transaction) erro
 	defer func(id uint64) {
 		if r := recover(); r != nil {
 			for _, t := range tm.currentTXs(id) {
-				err := t.rollback()
+				err := t.Rollback()
 				if err != nil {
 					log.Printf("rollback failure: %+v", err)
 				}
@@ -79,13 +79,13 @@ func (tm *TxManager) Exec(ctx context.Context, txFunc func(tx *Transaction) erro
 	// If this logical transaction has errors, we rollback it,
 	// and this will rollback the physical transaction.
 	if trans.err != nil {
-		err := trans.rollback()
+		err := trans.Rollback()
 		if err != nil {
 			return err
 		}
 		return trans.err
 	} else {
-		return trans.commit()
+		return trans.Commit()
 	}
 }
 
@@ -173,11 +173,11 @@ func (tm *TxManager) newTx(ctx context.Context, rootTx *Transaction, options *Op
 	txID := generateRandomKey(10)
 
 	if rootTx != nil {
-		return NewTx(rootTx.tx, txID, tm)
+		return NewTx(rootTx.tx, txID, options.Propagation == PropagationNew, tm)
 	}
 
 	dbTx := newRawTx(tm.db.MustBeginTx(ctx, &sql.TxOptions{Isolation: options.IsolationLevel}))
 
-	return NewTx(dbTx, txID, tm)
+	return NewTx(dbTx, txID, options.Propagation == PropagationNew, tm)
 
 }
