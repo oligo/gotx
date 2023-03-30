@@ -1,7 +1,6 @@
 package gotx
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -12,7 +11,7 @@ import (
 
 var (
 	// ErrInvalidTxState is returned when transaction is not initialized
-	ErrInvalidTxState = errors.New("transaction is already committed or rolled back")
+	ErrInvalidTxState = errors.New("gotx: tx is already committed or rolled back")
 )
 
 type rawTx struct {
@@ -20,7 +19,7 @@ type rawTx struct {
 
 	// a flag that marks the tx as committed or rolled back
 	// if raw tx is done, repeated commit/rollback will return error
-	done bool
+	// done bool
 	// A counter that tracks how many logical transactions use this tx
 	refCount uint32
 }
@@ -36,9 +35,12 @@ type Transaction struct {
 	txID string
 	err  error
 
+	// committed marks this logical tx is commited. Later commit operation is not allowed
+	committed bool
+
 	// reference to tx manager
 	txManager *TxManager
-	ctx       context.Context
+	// ctx       context.Context
 }
 
 func NewTx(t *rawTx, txID string, manager *TxManager) *Transaction {
@@ -46,6 +48,7 @@ func NewTx(t *rawTx, txID string, manager *TxManager) *Transaction {
 		tx:        t,
 		txID:      txID,
 		txManager: manager,
+		committed: false,
 	}
 
 	atomic.AddUint32(&trans.tx.refCount, 1)
@@ -53,26 +56,27 @@ func NewTx(t *rawTx, txID string, manager *TxManager) *Transaction {
 	return trans
 }
 
+func (t *Transaction) String() string {
+	return fmt.Sprintf("tx-%s", t.txID)
+}
+
 func (t *Transaction) setError(err error) {
 	t.err = err
 }
 
 func (t *Transaction) checkState() error {
-	if t.tx == nil || t.tx.done {
+	if t.tx == nil || t.committed {
 		return ErrInvalidTxState
 	}
 
 	return nil
 }
 
-func (t *Transaction) isDone() bool {
-	return t.tx.done
-}
-
 func (t *Transaction) commit() error {
+	t.txManager.Remove(t)
+
 	// decrease refCount by one
 	leftRefs := atomic.AddUint32(&t.tx.refCount, ^uint32(0))
-
 	// If refCount decreases to zero, do the real commit
 	if leftRefs <= 0 {
 		err := t.tx.Commit()
@@ -80,24 +84,23 @@ func (t *Transaction) commit() error {
 			return err
 		}
 
-		t.tx.done = true
-		t.txManager.remove(t)
-
-		return nil
 	}
 
+	log.Printf("%s committed\n", t)
 	return nil
 }
 
 // rollback always do the real rollback
 func (t *Transaction) rollback() error {
-	err := t.tx.Rollback()
-	if err != nil {
-		return err
+	t.txManager.RemoveAll()
+	if atomic.LoadUint32(&t.tx.refCount) > 0 {
+		atomic.SwapUint32(&t.tx.refCount, 0)
+		err := t.tx.Rollback()
+		if err != nil {
+			return err
+		}
+		log.Printf("%s rolledback\n", t)
 	}
-
-	t.tx.done = true
-	t.txManager.remove(t)
 
 	return nil
 }
