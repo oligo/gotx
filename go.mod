@@ -1,4 +1,4 @@
-module looz.ws/gotx
+module github.com/oligo/gotx
 
 go 1.19
 

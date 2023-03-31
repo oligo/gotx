@@ -11,11 +11,6 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// const (
-// 	contextTxKey            = "txManager:tx"
-// 	contextRootTxContextKey = "txManager:rootTxCtx"
-// )
-
 const bytesForKey = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 func generateRandomKey(size int) string {

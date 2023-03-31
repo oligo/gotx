@@ -1,25 +1,6 @@
-# gotx
+// This package shows useage of gotx
 
-
-[![Go Reference](https://pkg.go.dev/badge/github.com/oligo/gotx.svg)](https://pkg.go.dev/github.com/oligo/gotx)
-
-
-A transaction manager based on sqlx(github.com/jmoiron/sqlx) for Golang. Since it is based on sqlx, the query methods in gotx(GetOne, Select, Insert, etc.) is similar to those in sqlx.
-
-GoTx manages logical transactions binded to a goroutine in a group when the propagation type is set to `PropagationRequired`. These logical transactions are then binded to one underlying database transaction. GoTx uses goroutine ID to track logical transactions in a group.
-
-When the propagation type is set to `PropagationNew`. Each logical transaction is binded to one underlying database transaction.  
-
-NOT READY FOR PRODUCTION USE. PLEASE USE IT AT YOUR OWN RISK.
-
-## install
-
-    go get github.com/oligo/gotx
-
-
-## usage
-
-```go
+package main
 
 import (
 	"context"
@@ -72,9 +53,3 @@ func main() {
 	}, opts)
 
 }
-
-```
-
-## Issues
-
-TODO.
