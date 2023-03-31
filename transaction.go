@@ -4,9 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
 	"sync/atomic"
 
 	"github.com/jmoiron/sqlx"
+)
+
+const (
+	inClausePattern = `(in|IN)\s+\([^()]+\)`
 )
 
 var (
@@ -178,24 +183,14 @@ func (t *Transaction) Select(dest interface{}, query string, args ...interface{}
 
 }
 
-// Update execute a update sql using sqlx NamedExec. Docs from sqlx doc:
-//
-// Named queries are common to many other database packages. They allow you to use a bindvar syntax which refers
-// to the names of struct fields or map keys to bind variables a query, rather than having to refer to everything
-// positionally. The struct field naming conventions follow that of StructScan, using the NameMapper and the db struct tag.
+// Update execute a update sql using sqlx NamedExec.
 func (t *Transaction) Update(query string, arg interface{}) (int64, error) {
 
 	if err := t.checkState(); err != nil {
 		return 0, err
 	}
 
-	result, err := t.tx.NamedExec(query, arg)
-	if err != nil {
-		return 0, fmt.Errorf("update failed: %w", err)
-	}
-
-	updatedRows, err := result.RowsAffected()
-
+	updatedRows, err := t.NamedExec(query, arg)
 	if err != nil {
 		return 0, fmt.Errorf("update entity failed: %w", err)
 	}
@@ -203,25 +198,57 @@ func (t *Transaction) Update(query string, arg interface{}) (int64, error) {
 	return updatedRows, nil
 }
 
-func (t *Transaction) Delete(query string, arg interface{}) error {
+func (t *Transaction) Delete(query string, arg interface{}) (int64, error) {
 	if err := t.checkState(); err != nil {
-		return err
+		return 0, err
 	}
 
-	result, err := t.tx.NamedExec(query, arg)
-	if err != nil {
-		return fmt.Errorf("delete failed: %w", err)
-	}
-
-	deletedRows, err := result.RowsAffected()
-
+	deletedRows, err := t.NamedExec(query, arg)
 	if err != nil || deletedRows <= 0 {
-		return fmt.Errorf("delete entity failed: %w", err)
+		return 0, fmt.Errorf("delete entity failed: %w", err)
 	}
 
 	if deletedRows <= 0 {
 		log.Printf("delete entity failed: %s", err)
 	}
 
-	return nil
+	return deletedRows, nil
+}
+
+// NamedExec is a generic executor that does not return rows. It inspect the query to check if it has IN clause
+// and process it with sqlx.In.	Docs from sqlx doc:
+//
+// Named queries are common to many other database packages. They allow you to use a bindvar syntax which refers
+// to the names of struct fields or map keys to bind variables a query, rather than having to refer to everything
+// positionally. The struct field naming conventions follow that of StructScan, using the NameMapper and the db struct tag.
+func (t *Transaction) NamedExec(query string, arg interface{}) (int64, error) {
+	if err := t.checkState(); err != nil {
+		return 0, err
+	}
+
+	query2, args, err := sqlx.Named(query, arg)
+	if err != nil {
+		return 0, err
+	}
+
+	re, _ := regexp.Compile(inClausePattern)
+	hasInClause := re.MatchString(query)
+
+	if hasInClause {
+		query2, args, err = sqlx.In(query2, args...)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	query2 = t.tx.Rebind(query2)
+	log.Println(query2)
+
+	result, err := t.tx.Exec(query2, args...)
+	if err != nil {
+		return 0, err
+	}
+
+	return result.RowsAffected()
+
 }
