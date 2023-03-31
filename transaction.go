@@ -178,24 +178,29 @@ func (t *Transaction) Select(dest interface{}, query string, args ...interface{}
 
 }
 
-func (t *Transaction) Update(query string, arg interface{}) error {
+// Update execute a update sql using sqlx NamedExec. Docs from sqlx doc:
+//
+// Named queries are common to many other database packages. They allow you to use a bindvar syntax which refers
+// to the names of struct fields or map keys to bind variables a query, rather than having to refer to everything
+// positionally. The struct field naming conventions follow that of StructScan, using the NameMapper and the db struct tag.
+func (t *Transaction) Update(query string, arg interface{}) (int64, error) {
 
 	if err := t.checkState(); err != nil {
-		return err
+		return 0, err
 	}
 
 	result, err := t.tx.NamedExec(query, arg)
 	if err != nil {
-		return fmt.Errorf("update failed: %w", err)
+		return 0, fmt.Errorf("update failed: %w", err)
 	}
 
 	updatedRows, err := result.RowsAffected()
 
-	if err != nil || updatedRows <= 0 {
-		return fmt.Errorf("update entity failed: %w", err)
+	if err != nil {
+		return 0, fmt.Errorf("update entity failed: %w", err)
 	}
 
-	return nil
+	return updatedRows, nil
 }
 
 func (t *Transaction) Delete(query string, arg interface{}) error {
