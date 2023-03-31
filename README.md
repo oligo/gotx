@@ -4,11 +4,13 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/oligo/gotx.svg)](https://pkg.go.dev/github.com/oligo/gotx)
 
 
-A transaction manager based on sqlx(github.com/jmoiron/sqlx) for Golang. Since it is based on sqlx, the query methods in gotx(GetOne, Select, Insert, etc.) is similar to those in sqlx.
+A transaction manager based on sqlx(github.com/jmoiron/sqlx) for Golang. Since it is based on sqlx, the query methods in gotx(GetOne, Select, Insert, etc.) are similar to those in sqlx.
 
 GoTx manages logical transactions binded to a goroutine in a group when the propagation type is set to `PropagationRequired`. These logical transactions are then binded to one underlying database transaction. GoTx uses goroutine ID to track logical transactions in a group.
 
 When the propagation type is set to `PropagationNew`. Each logical transaction is binded to one underlying database transaction.  
+
+In the case of `PropagationRequired`, GoTx supports nested logical transactions so please feel free to call other transaction wrapped functions/methods from a transaction function/method in your service layer. With a nested transaction a commit does not persist changes until the top level transaction commit. While a rollback works regardless of the level of the transactions. That is when a rollback is triggered, all changes of nested logical transactions are discarded.  When using `PropagationNew` every transaction do commit and rollback independently.
 
 NOT READY FOR PRODUCTION USE. PLEASE USE IT AT YOUR OWN RISK.
 
